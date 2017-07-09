@@ -25,10 +25,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 add_definitions(-D_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES)
 message(STATUS "MSVC: Overloaded standard names")
 
-# Ignore warnings about older, less secure functions
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-message(STATUS "MSVC: Disabled NON-SECURE warnings")
-
 # disable warnings in Visual Studio 8 and above if not wanted
 if(NOT WARNINGS)
   if(NOT CMAKE_GENERATOR MATCHES "Visual Studio 7")
