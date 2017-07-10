@@ -280,7 +280,7 @@ int main(int argc, char * argv[])
 
         cliThread->wait();
 #else
-        cliThread->destory();
+        cliThread->destroy();
 #endif
         delete cliThread;
     }
