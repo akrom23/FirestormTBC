@@ -59,23 +59,19 @@ RealmBuildInfo const* FindBuildInfo(uint16 _build)
     return nullptr;
 }
 
-RealmList::RealmList() : m_UpdateInterval(0), m_NextUpdateTime(time(nullptr))
+RealmList::RealmList() : m_UpdateInterval(0), m_NextUpdateTime(time(nullptr)), _resolver(nullptr)
 {
 }
 
 RealmList::~RealmList()
 {
-}
-
-RealmList* RealmList::Instance()
-{
-    static RealmList instance;
-    return &instance;
+    delete _resolver;
 }
 
 /// Load the realm list from the database
-void RealmList::Initialize(uint32 updateInterval)
+void RealmList::Initialize(boost::asio::io_service& ioService, uint32 updateInterval)
 {
+    _resolver = new boost::asio::ip::tcp::resolver(ioService);
     m_UpdateInterval = updateInterval;
 
     ///- Get the content of the realmlist table in the database
@@ -88,6 +84,7 @@ void RealmList::UpdateRealm(uint32 ID, const std::string& name, const std::strin
     Realm& realm = m_realms[name];
 
     realm.m_ID       = ID;
+    realm.name       = name;
     realm.icon       = icon;
     realm.realmflags = realmflags;
     realm.timezone   = timezone;
@@ -117,9 +114,9 @@ void RealmList::UpdateRealm(uint32 ID, const std::string& name, const std::strin
                 realm.realmBuildInfo = *bInfo;
 
     ///- Append port to IP address.
-    std::ostringstream ss;
+    /*std::ostringstream ss;
     ss << address << ":" << port;
-    realm.address   = ss.str();
+    realm.address   = ss.str();*/
 }
 
 void RealmList::UpdateIfNeed()
@@ -149,29 +146,36 @@ void RealmList::UpdateRealms(bool init)
     {
         do
         {
-            Field* fields = result->Fetch();
-
-            uint32 Id                  = fields[0].GetUInt32();
-            std::string name           = fields[1].GetCppString();
-            uint8 realmflags           = fields[5].GetUInt8();
-            uint8 allowedSecurityLevel = fields[7].GetUInt8();
-
-            if (realmflags & ~(REALM_FLAG_OFFLINE | REALM_FLAG_NEW_PLAYERS | REALM_FLAG_RECOMMENDED | REALM_FLAG_SPECIFYBUILD))
+            try
             {
-                sLog.outError("Realm (id %u, name '%s') can only be flagged as OFFLINE (mask 0x02), NEWPLAYERS (mask 0x20), RECOMMENDED (mask 0x40), or SPECIFICBUILD (mask 0x04) in DB", Id, name.c_str());
-                realmflags &= (REALM_FLAG_OFFLINE | REALM_FLAG_NEW_PLAYERS | REALM_FLAG_RECOMMENDED | REALM_FLAG_SPECIFYBUILD);
+                boost::asio::ip::tcp::resolver::iterator end;
+
+                Field* fields = result->Fetch();
+
+                uint32 Id = fields[0].GetUInt32();
+                std::string name = fields[1].GetString();
+
+                uint8 realmflags = fields[5].GetUInt8();
+                uint8 allowedSecurityLevel = fields[7].GetUInt8();
+
+                if (realmflags & ~(REALM_FLAG_OFFLINE | REALM_FLAG_NEW_PLAYERS | REALM_FLAG_RECOMMENDED | REALM_FLAG_SPECIFYBUILD))
+                {
+                    sLog.outError("Realm (id %u, name '%s') can only be flagged as OFFLINE (mask 0x02), NEWPLAYERS (mask 0x20), RECOMMENDED (mask 0x40), or SPECIFICBUILD (mask 0x04) in DB", Id, name.c_str());
+                    realmflags &= (REALM_FLAG_OFFLINE | REALM_FLAG_NEW_PLAYERS | REALM_FLAG_RECOMMENDED | REALM_FLAG_SPECIFYBUILD);
+                }
+
+                UpdateRealm(Id, name, fields[2].GetString(), fields[3].GetUInt32(), fields[4].GetUInt8(), RealmFlags(realmflags), fields[6].GetUInt8(),
+                    (allowedSecurityLevel <= SEC_ADMINISTRATOR ? AccountTypes(allowedSecurityLevel) : SEC_ADMINISTRATOR),
+                    fields[8].GetFloat(), fields[9].GetString());
+
+                if (init)
+                    sLog.outString("Added realm \"%s\" at %s", name.c_str(), fields[2].GetString());
             }
-
-            UpdateRealm(
-                Id, name, fields[2].GetCppString(), fields[3].GetUInt32(),
-                fields[4].GetUInt8(), RealmFlags(realmflags), fields[6].GetUInt8(),
-                (allowedSecurityLevel <= SEC_ADMINISTRATOR ? AccountTypes(allowedSecurityLevel) : SEC_ADMINISTRATOR),
-                fields[8].GetFloat(), fields[9].GetCppString());
-
-            if (init)
-                sLog.outString("Added realm id %u, name '%s'",  Id, name.c_str());
+            catch (std::exception& ex)
+            {
+                sLog.outError("Realmlist::UpdateRealms has thrown an exception: %s", ex.what());
+            }
         }
         while (result->NextRow());
-        delete result;
     }
 }

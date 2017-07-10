@@ -33,16 +33,19 @@
 #include "Util.h"
 #include "Network/Listener.hpp"
 
-#include <openssl/opensslv.h>
-#include <openssl/crypto.h>
-
+#include <boost/asio/signal_set.hpp>
 #include <boost/program_options.hpp>
-#include <boost/version.hpp>
+#include <boost/filesystem/operations.hpp>
+#include <openssl/crypto.h>
+#include <openssl/opensslv.h>
 
 #include <iostream>
 #include <string>
 #include <chrono>
 #include <thread>
+
+using boost::asio::ip::tcp;
+using namespace boost::program_options;
 
 #ifdef _WIN32
 #include "ServiceWin32.h"
@@ -56,87 +59,25 @@ char serviceDescription[] = "World of Warcraft Authentication Service";
  *  2 - paused
  */
 int m_ServiceStatus = -1;
-#else
-#include "PosixDaemon.h"
+
+boost::asio::deadline_timer* _serviceStatusWatchTimer;
+void ServiceStatusWatcher(boost::system::error_code const& error);
 #endif
 
 bool StartDB();
-void UnhookSignals();
-void HookSignals();
+void SignalHandler(const boost::system::error_code& error, int signalNumber);
+void KeepDatabaseAliveHandler(const boost::system::error_code& error);
 
-bool stopEvent = false;                                     ///< Setting it to true stops the server
+boost::asio::io_service* _ioService;
+boost::asio::deadline_timer* _dbPingTimer;
+uint32 _dbPingInterval;
 
 DatabaseType LoginDatabase;                                 ///< Accessor to the realm server database
-
-/// Print out the usage string for this program on the console.
-void usage(const char* prog)
-{
-    sLog.outString("Usage: \n %s [<options>]\n"
-                   "    -v, --version            print version and exist\n\r"
-                   "    -c config_file           use config_file as configuration file\n\r"
-#ifdef _WIN32
-                   "    Running as service functions:\n\r"
-                   "    -s run                   run as service\n\r"
-                   "    -s install               install service\n\r"
-                   "    -s uninstall             uninstall service\n\r"
-#else
-                   "    Running as daemon functions:\n\r"
-                   "    -s run                   run as daemon\n\r"
-                   "    -s stop                  stop daemon\n\r"
-#endif
-                   , prog);
-}
 
 /// Launch the realm server
 int main(int argc, char *argv[])
 {
-    std::string configFile, serviceParameter;
-
-    boost::program_options::options_description desc("Allowed options");
-    desc.add_options()
-        ("config,c", boost::program_options::value<std::string>(&configFile)->default_value(_REALMD_CONFIG), "configuration file")
-        ("version,v", "print version and exit")
-#ifdef _WIN32
-        ("s", boost::program_options::value<std::string>(&serviceParameter), "<run, install, uninstall> service");
-#else
-        ("s", boost::program_options::value<std::string>(&serviceParameter), "<run, stop> service");
-#endif
-
-    boost::program_options::variables_map vm;
-
-    try
-    {
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
-        boost::program_options::notify(vm);
-    }
-    catch (boost::program_options::error const &e)
-    {
-        std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
-        std::cerr << desc << std::endl;
-
-        return 1;
-    }
-
-#ifdef _WIN32                                                // windows service command need execute before config read
-    if (vm.count("s"))
-    {
-        switch (::tolower(serviceParameter[0]))
-        {
-            case 'i':
-                if (WinServiceInstall())
-                    sLog.outString("Installing service");
-                return 1;
-            case 'u':
-                if (WinServiceUninstall())
-                    sLog.outString("Uninstalling service");
-                return 1;
-            case 'r':
-                WinServiceRun();
-                break;
-        }
-    }
-#endif
-
+    std::string configFile = _REALMD_CONFIG;
     if (!sConfig.SetSource(configFile))
     {
         sLog.outError("Could not find configuration file %s.", configFile.c_str());
@@ -144,59 +85,26 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-#ifndef _WIN32                                               // posix daemon commands need apply after config read
-    if (vm.count("s"))
-    {
-        switch (::tolower(serviceParameter[0]))
-        {
-            case 'r':
-                startDaemon();
-                break;
-            case 's':
-                stopDaemon();
-                break;
-        }
-    }
-#endif
-
     sLog.Initialize();
 
-    sLog.outString("%s [realm-daemon]", _FULLVERSION(REVISION_DATE, REVISION_TIME, REVISION_ID));
+    sLog.outString("realm deamon");
     sLog.outString("<Ctrl-C> to stop.\n");
     sLog.outString("Using configuration file %s.", configFile.c_str());
-
-    ///- Check the version of the configuration file
-    uint32 confVersion = sConfig.GetIntDefault("ConfVersion", 0);
-    if (confVersion < _REALMDCONFVERSION)
-    {
-        sLog.outError("*****************************************************************************");
-        sLog.outError(" WARNING: Your realmd.conf version indicates your conf file is out of date!");
-        sLog.outError("          Please check for updates, as your current default values may cause");
-        sLog.outError("          strange behavior.");
-        sLog.outError("*****************************************************************************");
-        Log::WaitBeforeContinueIfNeed();
-    }
-
-    DETAIL_LOG("%s (Library: %s)", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));
-    if (SSLeay() < 0x009080bfL)
-    {
-        DETAIL_LOG("WARNING: Outdated version of OpenSSL lib. Logins to server may not work!");
-        DETAIL_LOG("WARNING: Minimal required version [OpenSSL 0.9.8k]");
-    }
+    sLog.outString("Using SSL Version: %s (library: %s", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));
+    sLog.outString("Using Boost Version: %i.%i.%i", BOOST_VERSION / 100000, BOOST_VERSION / 100 % 1000, BOOST_VERSION % 100);
 
     /// realmd PID file creation
-    std::string pidfile = sConfig.GetStringDefault("PidFile");
+    std::string pidfile = sConfig.GetStringDefault("PidFile", "");
     if (!pidfile.empty())
     {
-        uint32 pid = CreatePIDFile(pidfile);
-        if (!pid)
+        if (uint32 pid = CreatePIDFile(pidfile))
+            sLog.outString("Daemon PID: %u\n", pid);
+        else
         {
             sLog.outError("Cannot create PID file %s.\n", pidfile.c_str());
             Log::WaitBeforeContinueIfNeed();
             return 1;
         }
-
-        sLog.outString("Daemon PID: %u\n", pid);
     }
 
     ///- Initialize the database connection
@@ -206,12 +114,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    _ioService = new boost::asio::io_service();
+
     ///- Get the list of realms for the server
-    sRealmList->Initialize(sConfig.GetIntDefault("RealmsStateUpdateDelay", 20));
+    sRealmList->Initialize(*_ioService, sConfig.GetIntDefault("RealmsStateUpdateDelay", 20));
     if (sRealmList->size() == 0)
     {
         sLog.outError("No valid realms specified.");
         Log::WaitBeforeContinueIfNeed();
+        delete _ioService;
         return 1;
     }
 
@@ -222,17 +133,29 @@ int main(int argc, char *argv[])
     LoginDatabase.Execute("DELETE FROM ip_banned WHERE unbandate <= UNIX_TIMESTAMP() AND unbandate <> bandate");
     LoginDatabase.CommitTransaction();
 
-    auto rmport = sConfig.GetIntDefault("RealmServerPort", DEFAULT_REALMSERVER_PORT);
+    int32 rmport = sConfig.GetIntDefault("RealmServerPort", 3724);
+    if (rmport < 0 || rmport > 0xFFFF)
+    {
+        sLog.outError("Specified port out of allowed range (1-65535");
+        delete _ioService;
+        return 1;
+    }
+
+    // Dead string of code. Need to update AuthSocket for this to work.
     std::string bind_ip = sConfig.GetStringDefault("BindIP", "0.0.0.0");
 
     // FIXME - more intelligent selection of thread count is needed here.  config option?
     MaNGOS::Listener<AuthSocket> listener(rmport, 1);
 
-    ///- Catch termination signals
-    HookSignals();
+    boost::asio::signal_set signals(*_ioService, SIGINT, SIGTERM);
+    #ifdef _WIN32
+    signals.add(SIGBREAK);
+    #endif
+
+    signals.async_wait(SignalHandler);
 
     ///- Handle affinity for multiple processors and process priority on Windows
-#ifdef _WIN32
+#ifdef _WIN32 /// - Needs rework
     {
         HANDLE hProcess = GetCurrentProcess();
 
@@ -277,58 +200,35 @@ int main(int argc, char *argv[])
     // server has started up successfully => enable async DB requests
     LoginDatabase.AllowAsyncTransactions();
 
-    // maximum counter for next ping
-    auto const numLoops = sConfig.GetIntDefault("MaxPingTime", 30) * MINUTE * 10;
-    uint32 loopCounter = 0;
+    // Enabled a timed callback for handling the database keep alive ping
+    _dbPingInterval = sConfig.GetIntDefault("MaxPingTime", 30);
+    _dbPingTimer = new boost::asio::deadline_timer(*_ioService);
+    _dbPingTimer->expires_from_now(boost::posix_time::minutes(_dbPingInterval));
+    _dbPingTimer->async_wait(KeepDatabaseAliveHandler);
 
-#ifndef _WIN32
-    detachDaemon();
-#endif
-    ///- Wait for termination signal
-    while (!stopEvent)
+    #ifdef _WIN32
+    if (m_ServiceStatus != -1)
     {
-        if ((++loopCounter) == numLoops)
-        {
-            loopCounter = 0;
-            DETAIL_LOG("Ping MySQL to keep connection alive");
-            LoginDatabase.Ping();
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-#ifdef _WIN32
-        if (m_ServiceStatus == 0) stopEvent = true;
-        while (m_ServiceStatus == 2) Sleep(1000);
-#endif
+        _serviceStatusWatchTimer = new boost::asio::deadline_timer(*_ioService);
+        _serviceStatusWatchTimer->expires_from_now(boost::posix_time::seconds(1));
+        _serviceStatusWatchTimer->async_wait(ServiceStatusWatcher);
     }
+    #endif
 
+    _ioService->run();
+
+    _dbPingTimer->cancel();
 
     ///- Wait for the delay thread to exit
     LoginDatabase.HaltDelayThread();
 
-    ///- Remove signal handling before leaving
-    UnhookSignals();
-
     sLog.outString("Halting process...");
+
+    signals.cancel();
+
+    delete _dbPingTimer;
+    delete _ioService;
     return 0;
-}
-
-/// Handle termination signals
-/** Put the global variable stopEvent to 'true' if a termination signal is caught **/
-void OnSignal(int s)
-{
-    switch (s)
-    {
-        case SIGINT:
-        case SIGTERM:
-            stopEvent = true;
-            break;
-#ifdef _WIN32
-        case SIGBREAK:
-            stopEvent = true;
-            break;
-#endif
-    }
-
-    signal(s, OnSignal);
 }
 
 /// Initialize connection to the database
@@ -359,24 +259,39 @@ bool StartDB()
     return true;
 }
 
-/// Define hook 'OnSignal' for all termination signals
-void HookSignals()
+void SignalHandler(const boost::system::error_code& error, int /*signalNumber*/)
 {
-    signal(SIGINT, OnSignal);
-    signal(SIGTERM, OnSignal);
-#ifdef _WIN32
-    signal(SIGBREAK, OnSignal);
-#endif
+    if (!error)
+        _ioService->stop();
 }
 
-/// Unhook the signals before leaving
-void UnhookSignals()
+void KeepDatabaseAliveHandler(const boost::system::error_code& error)
 {
-    signal(SIGINT, 0);
-    signal(SIGTERM, 0);
-#ifdef _WIN32
-    signal(SIGBREAK, 0);
-#endif
+    if (!error)
+    {
+        sLog.outString("Ping MySQL to keep connection alive");
+        LoginDatabase.Ping();
+
+        _dbPingTimer->expires_from_now(boost::posix_time::minutes(_dbPingInterval));
+        _dbPingTimer->async_wait(KeepDatabaseAliveHandler);
+    }
 }
 
-/// @}
+#ifdef _WIN32
+void ServiceStatusWatcher(boost::system::error_code const& error)
+{
+    if (!error)
+    {
+        if (m_ServiceStatus == 0)
+        {
+            _ioService->stop();
+            delete _serviceStatusWatchTimer;
+        }
+        else
+        {
+            _serviceStatusWatchTimer->expires_from_now(boost::posix_time::seconds(1));
+            _serviceStatusWatchTimer->async_wait(ServiceStatusWatcher);
+        }
+    }
+}
+#endif

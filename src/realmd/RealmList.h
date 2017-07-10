@@ -23,7 +23,12 @@
 #ifndef _REALMLIST_H
 #define _REALMLIST_H
 
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/io_service.hpp>
 #include "Common.h"
+
+using namespace boost::asio;
 
 struct RealmBuildInfo
 {
@@ -42,6 +47,7 @@ typedef std::set<uint32> RealmBuilds;
 struct Realm
 {
     std::string address;
+    std::string name;
     uint8 icon;
     RealmFlags realmflags;                                  // realmflags
     uint8 timezone;
@@ -58,11 +64,15 @@ class RealmList
     public:
         typedef std::map<std::string, Realm> RealmMap;
 
-        static RealmList* Instance();
+        static RealmList* Instance()
+        {
+            static RealmList instance;
+            return &instance;
+        }
 
         ~RealmList();
 
-        void Initialize(uint32 updateInterval);
+        void Initialize(boost::asio::io_service& ioService, uint32 updateInterval);
 
         void UpdateIfNeed();
 
@@ -79,6 +89,7 @@ class RealmList
         RealmMap m_realms;                                  ///< Internal map of realms
         uint32   m_UpdateInterval;
         time_t   m_NextUpdateTime;
+        boost::asio::ip::tcp::resolver* _resolver;
 };
 
 #define sRealmList RealmList::Instance()

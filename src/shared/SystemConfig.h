@@ -98,5 +98,4 @@
 
 #define DEFAULT_PLAYER_LIMIT 100
 #define DEFAULT_WORLDSERVER_PORT 8085                       //8129
-#define DEFAULT_REALMSERVER_PORT 3724
 #endif
