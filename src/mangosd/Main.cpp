@@ -67,7 +67,11 @@ char serviceDescription[] = "World of Warcraft Worldserver Service";
 int m_ServiceStatus = -1;
 #endif
 
-boost::asio::io_service* _ioService;
+boost::asio::io_service _ioService;
+boost::asio::deadline_timer _freezeCheckTimer(_ioService);
+uint32 _worldLoopCounter(0);
+uint32 _lastChangeMsTime(0);
+uint32 _maxCoreStuckTimeInMs(0);
 
 DatabaseType WorldDatabase;                                 ///< Accessor to the world database
 DatabaseType CharacterDatabase;                             ///< Accessor to the character database
@@ -75,10 +79,9 @@ DatabaseType LoginDatabase;                                 ///< Accessor to the
 
 uint32 realmID;                                             ///< Id of the realm
 
+void FreezeDetectorHandler(const boost::system::error_code& error);
 bool StartDB();
-void HookSignals();
-void UnhookSignals();
-static void OnSignal(int s);
+void StopDB();
 void clearOnlineAccounts();
 
 /// Launch the mangos server
@@ -128,24 +131,6 @@ int main(int argc, char * argv[])
     ///- Initialize the World
     sWorld.SetInitialWorldSettings();
 
-    // server loaded successfully => enable async DB requests
-    // this is done to forbid any async transactions during server startup!
-    CharacterDatabase.AllowAsyncTransactions();
-    WorldDatabase.AllowAsyncTransactions();
-    LoginDatabase.AllowAsyncTransactions();
-
-    ///- Catch termination signals
-    HookSignals();
-
-    ///- Launch WorldRunnable thread
-    MaNGOS::Thread world_thread(new WorldRunnable);
-    world_thread.setPriority(MaNGOS::Priority_Highest);
-
-    // set realmbuilds depend on mangosd expected builds, and set server online
-    std::string builds = AcceptableClientBuildsListStr();
-    LoginDatabase.escape_string(builds);
-    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags & ~%u, population = 0, realmbuilds = '%s'  WHERE id = '%u'", REALM_FLAG_OFFLINE, builds.c_str(), realmID);
-
     MaNGOS::Thread* cliThread = nullptr;
 #ifdef _WIN32
     if (sConfig.GetBoolDefault("Console.Enable", true) && (m_ServiceStatus == -1)/* need disable console in service mode*/)
@@ -155,6 +140,40 @@ int main(int argc, char * argv[])
     {
         ///- Launch CliRunnable thread
         cliThread = new MaNGOS::Thread(new CliRunnable);
+    }
+
+    // server loaded successfully => enable async DB requests
+    // this is done to forbid any async transactions during server startup!
+    CharacterDatabase.AllowAsyncTransactions();
+    WorldDatabase.AllowAsyncTransactions();
+    LoginDatabase.AllowAsyncTransactions();
+
+    ///- Launch WorldRunnable thread
+    MaNGOS::Thread world_thread(new WorldRunnable);
+    world_thread.setPriority(MaNGOS::Priority_Highest);
+
+    //auto const listenIP = sConfig.GetStringDefault("BindIP", "0.0.0.0");
+    MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD), 8);
+
+    std::unique_ptr<MaNGOS::Listener<RASocket>> raListener;
+    if (sConfig.GetBoolDefault("Ra.Enable", false))
+        raListener.reset(new MaNGOS::Listener<RASocket>(sConfig.GetIntDefault("Ra.Port", 3443), 1));
+
+    std::unique_ptr<SOAPThread> soapThread;
+    if (sConfig.GetBoolDefault("SOAP.Enabled", false))
+        soapThread.reset(new SOAPThread("0.0.0.0", sConfig.GetIntDefault("SOAP.Port", 7878)));
+
+    // set realmbuilds depend on mangosd expected builds, and set server online
+    std::string builds = AcceptableClientBuildsListStr();
+    LoginDatabase.escape_string(builds);
+    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags & ~%u, population = 0, realmbuilds = '%s'  WHERE id = '%u'", REALM_FLAG_OFFLINE, builds.c_str(), realmID);
+
+    if (int coreStuckTime = sConfig.GetIntDefault("MaxCoreStuckTime", 0))
+    {
+        _maxCoreStuckTimeInMs = coreStuckTime * 1000;
+        _freezeCheckTimer.expires_from_now(boost::posix_time::seconds(5));
+        _freezeCheckTimer.async_wait(FreezeDetectorHandler);
+        sLog.outString("Starting up anti-freeze thread (%u seconds max stuck time)...", coreStuckTime);
     }
 
     ///- Handle affinity for multiple processors and process priority on Windows
@@ -201,26 +220,12 @@ int main(int argc, char * argv[])
     }
 #endif
 
-    //auto const listenIP = sConfig.GetStringDefault("BindIP", "0.0.0.0");
-    MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD), 8);
-
-    std::unique_ptr<MaNGOS::Listener<RASocket>> raListener;
-    if (sConfig.GetBoolDefault("Ra.Enable", false))
-        raListener.reset(new MaNGOS::Listener<RASocket>(sConfig.GetIntDefault("Ra.Port", 3443), 1));
-
-    std::unique_ptr<SOAPThread> soapThread;
-    if (sConfig.GetBoolDefault("SOAP.Enabled", false))
-        soapThread.reset(new SOAPThread("0.0.0.0", sConfig.GetIntDefault("SOAP.Port", 7878)));
-
     // wait for shut down and then let things go out of scope to close them down
     while (!World::IsStopped())
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
     ///- Set server offline in realmlist
     LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags | %u WHERE id = '%u'", REALM_FLAG_OFFLINE, realmID);
-
-    ///- Remove signal handling before leaving
-    UnhookSignals();
 
     // when the main thread closes the singletons get unloaded
     // since worldrunnable uses them, it will crash if unloaded after master
@@ -232,10 +237,7 @@ int main(int argc, char * argv[])
     // send all still queued mass mails (before DB connections shutdown)
     sMassMailMgr.Update(true);
 
-    ///- Wait for DB delay threads to end
-    CharacterDatabase.HaltDelayThread();
-    WorldDatabase.HaltDelayThread();
-    LoginDatabase.HaltDelayThread();
+    StopDB();
 
     sLog.outString("Halting process...");
 
@@ -309,21 +311,11 @@ bool StartDB()
         return false;
     }
 
-    if (!WorldDatabase.CheckRequiredField("db_version", REVISION_DB_MANGOS))
-    {
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        return false;
-    }
-
     dbstring = sConfig.GetStringDefault("CharacterDatabaseInfo");
     nConnections = sConfig.GetIntDefault("CharacterDatabaseConnections", 1);
     if (dbstring.empty())
     {
         sLog.outError("Character Database not specified in configuration file");
-
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
         return false;
     }
     sLog.outString("Character Database total connections: %i", nConnections + 1);
@@ -332,17 +324,6 @@ bool StartDB()
     if (!CharacterDatabase.Initialize(dbstring.c_str(), nConnections))
     {
         sLog.outError("Cannot connect to Character database %s", dbstring.c_str());
-
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        return false;
-    }
-
-    if (!CharacterDatabase.CheckRequiredField("character_db_version", REVISION_DB_CHARACTERS))
-    {
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        CharacterDatabase.HaltDelayThread();
         return false;
     }
 
@@ -352,10 +333,6 @@ bool StartDB()
     if (dbstring.empty())
     {
         sLog.outError("Login database not specified in configuration file");
-
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        CharacterDatabase.HaltDelayThread();
         return false;
     }
 
@@ -364,34 +341,14 @@ bool StartDB()
     if (!LoginDatabase.Initialize(dbstring.c_str(), nConnections))
     {
         sLog.outError("Cannot connect to login database %s", dbstring.c_str());
-
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        CharacterDatabase.HaltDelayThread();
         return false;
     }
-
-    if (!LoginDatabase.CheckRequiredField("realmd_db_version", REVISION_DB_REALMD))
-    {
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        CharacterDatabase.HaltDelayThread();
-        LoginDatabase.HaltDelayThread();
-        return false;
-    }
-
-    sLog.outString();
 
     ///- Get the realm Id from the configuration file
     realmID = sConfig.GetIntDefault("RealmID", 0);
     if (!realmID)
     {
         sLog.outError("Realm ID not defined in configuration file");
-
-        ///- Wait for already started DB delay threads to end
-        WorldDatabase.HaltDelayThread();
-        CharacterDatabase.HaltDelayThread();
-        LoginDatabase.HaltDelayThread();
         return false;
     }
 
@@ -409,6 +366,36 @@ bool StartDB()
     return true;
 }
 
+void StopDB()
+{
+    CharacterDatabase.HaltDelayThread();
+    WorldDatabase.HaltDelayThread();
+    LoginDatabase.HaltDelayThread();
+}
+
+void FreezeDetectorHandler(const boost::system::error_code& error)
+{
+    if (!error)
+    {
+        uint32 curtime = WorldTimer::getMSTime();
+
+        uint32 worldLoopCounter = World::m_worldLoopCounter;
+        if (_worldLoopCounter != worldLoopCounter)
+        {
+            _lastChangeMsTime = curtime;
+            _worldLoopCounter = worldLoopCounter;
+        }
+
+        else if (WorldTimer::getMSTimeDiff(_lastChangeMsTime, curtime) > _maxCoreStuckTimeInMs)
+        {
+            sLog.outError("World Thread hangs, kicking out server!");
+            World::StopNow(SHUTDOWN_EXIT_CODE);
+        }
+
+        _freezeCheckTimer.expires_from_now(boost::posix_time::seconds(1));
+        _freezeCheckTimer.async_wait(FreezeDetectorHandler);
+    }
+}
 
 /// Clear 'online' status for all accounts with characters in this realm
 void clearOnlineAccounts()
@@ -421,51 +408,4 @@ void clearOnlineAccounts()
 
     // Battleground instance ids reset at server restart
     CharacterDatabase.Execute("UPDATE character_battleground_data SET instance_id = 0");
-}
-
-/// Handle termination signals
-void OnSignal(int s)
-{
-    switch (s)
-    {
-    case SIGINT:
-        World::StopNow(RESTART_EXIT_CODE);
-        break;
-    case SIGTERM:
-#ifdef _WIN32
-    case SIGBREAK:
-#endif
-        World::StopNow(SHUTDOWN_EXIT_CODE);
-        break;
-    }
-
-    // give a 30 sec timeout in case of Master cannot finish properly
-    int32 timeOut = 200;
-    while (timeOut > 0)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        --timeOut;
-    }
-
-    signal(s, OnSignal);
-}
-
-/// Define hook '_OnSignal' for all termination signals
-void HookSignals()
-{
-    signal(SIGINT, OnSignal);
-    signal(SIGTERM, OnSignal);
-#ifdef _WIN32
-    signal(SIGBREAK, OnSignal);
-#endif
-}
-
-/// Unhook the signals before leaving
-void UnhookSignals()
-{
-    signal(SIGINT, 0);
-    signal(SIGTERM, 0);
-#ifdef _WIN32
-    signal(SIGBREAK, 0);
-#endif
 }

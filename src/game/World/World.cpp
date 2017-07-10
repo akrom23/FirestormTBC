@@ -1318,10 +1318,7 @@ void World::SetInitialWorldSettings()
     sAuctionBot.Initialize();
     sLog.outString();
 
-    sLog.outString("---------------------------------------");
-    sLog.outString("      CMANGOS: World initialized       ");
-    sLog.outString("---------------------------------------");
-    sLog.outString();
+    sLog.outString("World is now initialized..");
 
     uint32 uStartInterval = WorldTimer::getMSTimeDiff(uStartTime, WorldTimer::getMSTime());
     sLog.outString("SERVER STARTUP TIME: %i minutes %i seconds", uStartInterval / 60000, (uStartInterval % 60000) / 1000);
