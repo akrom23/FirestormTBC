@@ -114,9 +114,9 @@ void RealmList::UpdateRealm(uint32 ID, const std::string& name, const std::strin
                 realm.realmBuildInfo = *bInfo;
 
     ///- Append port to IP address.
-    /*std::ostringstream ss;
+    std::ostringstream ss;
     ss << address << ":" << port;
-    realm.address   = ss.str();*/
+    realm.address   = ss.str();
 }
 
 void RealmList::UpdateIfNeed()
