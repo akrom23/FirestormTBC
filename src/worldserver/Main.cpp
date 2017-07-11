@@ -53,9 +53,13 @@
 #include <iostream>
 #include <string>
 
+#ifndef FIRESTORM_WORLD_CONFIG
+    #define FIRESTORM_WORLD_CONFIG "worldserver.conf"
+#endif
+
 #ifdef _WIN32
 #include "ServiceWin32.h"
-char serviceName[] = "mangosd";
+char serviceName[] = "worldserver";
 char serviceLongName[] = "Worldserver Service";
 char serviceDescription[] = "World of Warcraft Worldserver Service";
 /*
@@ -90,7 +94,7 @@ int main(int argc, char * argv[])
     std::string auctionBotConfig;
     sAuctionBotConfig.SetConfigFileName(auctionBotConfig);
 
-    std::string configFile = _MANGOSD_CONFIG;
+    std::string configFile = FIRESTORM_WORLD_CONFIG;
     if (!sConfig.SetSource(configFile))
     {
         sLog.outError("Could not find configuration file %s.", configFile.c_str());
@@ -98,7 +102,7 @@ int main(int argc, char * argv[])
         return 1;
     }
 
-    sLog.outString("World Server");
+    sLog.outString("Worldserver");
     sLog.outString("<Ctrl-C> to stop.\n");
     sLog.outString("Using configuration file %s.", configFile.c_str());
     sLog.outString("Using SSL Version: %s (library: %s", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));

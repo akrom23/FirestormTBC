@@ -17,6 +17,6 @@
  */
 #include <winver.h>
 
-IDI_APPICON ICON DISCARDABLE "mangosd.ico"
+IDI_APPICON ICON DISCARDABLE "worldserver.ico"
 
 APP_MANIFEST RT_MANIFEST "manifest.xml"

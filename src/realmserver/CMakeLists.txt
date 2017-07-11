@@ -16,20 +16,20 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 
-set(EXECUTABLE_NAME ${CMANGOS_BINARY_REALMD_NAME})
+set(EXECUTABLE_NAME ${BINARY_REALM_NAME})
 
 set(EXECUTABLE_SRCS
-    AuthCodes.h
-    AuthSocket.cpp
-    AuthSocket.h
+    Authentication/AuthCodes.h
     Main.cpp
-    RealmList.cpp
-    RealmList.h
+    Realms/RealmList.cpp
+    Realms/RealmList.h
+    Server/AuthSocket.cpp
+    Server/AuthSocket.h
    )
 
 if(WIN32)
   # add resource file to windows build
-  set(EXECUTABLE_SRCS ${EXECUTABLE_SRCS} realmd.rc)
+  set(EXECUTABLE_SRCS ${EXECUTABLE_SRCS} realmserver.rc)
 endif()
 
 include_directories(
@@ -37,6 +37,10 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/src/framework
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/src/shared
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/Authentication
+  ${CMAKE_CURRENT_SOURCE_DIR}/Realms
+  ${CMAKE_CURRENT_SOURCE_DIR}/Server
   ${MYSQL_INCLUDE_DIR}
   ${OPENSSL_INCLUDE_DIR}
 )
@@ -70,7 +74,7 @@ if(WIN32)
   set_target_properties(${EXECUTABLE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "${DEV_BIN_DIR}")
   set_target_properties(${EXECUTABLE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE "${DEV_BIN_DIR}")
   set_target_properties(${EXECUTABLE_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "$(OutDir)")
-  set_target_properties(${EXECUTABLE_NAME} PROPERTIES PROJECT_LABEL "AuthServer")
+  set_target_properties(${EXECUTABLE_NAME} PROPERTIES PROJECT_LABEL "Realmserver")
 
   # Add provided dependency lib to dev folder
   string(REGEX REPLACE "/" "\\\\" LibFolder ${DEV_PROVIDED_LIBS_FOLDER})
@@ -79,7 +83,7 @@ if(WIN32)
 
   # Add conf file to dev folder
   add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different \"${CMAKE_CURRENT_SOURCE_DIR}/realmd.conf.dist.in\" \"$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/realmd.conf.dist\")
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different \"${CMAKE_CURRENT_SOURCE_DIR}/realmserver.conf.dist.in\" \"$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/realmserver.conf.dist\")
 endif()
 
 if(UNIX)
@@ -101,7 +105,7 @@ set_target_properties(${EXECUTABLE_NAME} PROPERTIES LINK_FLAGS
 )
 
 install(TARGETS ${EXECUTABLE_NAME} DESTINATION ${BIN_DIR})
-install(FILES realmd.conf.dist.in DESTINATION ${CONF_DIR} RENAME realmd.conf.dist)
+install(FILES realmserver.conf.dist.in DESTINATION ${CONF_DIR} RENAME realmserver.conf.dist)
 
 if(MSVC)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/\${BUILD_TYPE}/${EXECUTABLE_NAME}.pdb DESTINATION ${BIN_DIR} CONFIGURATIONS Debug)

@@ -18,8 +18,8 @@
 project(Firestorm_TBC)
 
 # Define here name of the binaries
-set(CMANGOS_BINARY_SERVER_NAME "mangosd")
-set(CMANGOS_BINARY_REALMD_NAME "realmd")
+set(BINARY_SERVER_NAME "worldserver")
+set(BINARY_REALM_NAME "realmserver")
 
 cmake_minimum_required(VERSION 2.8.12)
 
@@ -243,7 +243,7 @@ endif()
 if(BUILD_GAME_SERVER OR BUILD_LOGIN_SERVER)
   add_subdirectory(src)
   if(MSVC AND BUILD_GAME_SERVER)
-    set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${CMANGOS_BINARY_SERVER_NAME})
+    set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${BINARY_SERVER_NAME})
   endif()
 
   # Generate revision-extractor

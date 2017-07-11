@@ -16,27 +16,27 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 
-set(EXECUTABLE_NAME ${CMANGOS_BINARY_SERVER_NAME})
+set(EXECUTABLE_NAME ${BINARY_SERVER_NAME})
 
 set(EXECUTABLE_SRCS
-    CliRunnable.cpp
-    CliRunnable.h
-    MaNGOSsoap.cpp
-    MaNGOSsoap.h
+    CommandLine/CliRunnable.cpp
+    CommandLine/CliRunnable.h
+    Soap/MaNGOSsoap.cpp
+    Soap/MaNGOSsoap.h
     Main.cpp
-    RASocket.cpp
-    RASocket.h
-    WorldRunnable.cpp
-    WorldRunnable.h
-    soapC.cpp
-    soapH.h
-    soapServer.cpp
-    soapStub.h
+    RemoteAccess/RASocket.cpp
+    RemoteAccess/RASocket.h
+    Server/WorldRunnable.cpp
+    Server/WorldRunnable.h
+    Soap/soapC.cpp
+    Soap/soapH.h
+    Soap/soapServer.cpp
+    Soap/soapStub.h
    )
 
 if(WIN32)
   # add resource file to windows build
-  set(EXECUTABLE_SRCS ${EXECUTABLE_SRCS} mangosd.rc)
+  set(EXECUTABLE_SRCS ${EXECUTABLE_SRCS} worldserver.rc)
 endif()
 
 include_directories(
@@ -44,6 +44,11 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/src/framework
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_SOURCE_DIR}/dep/include/gsoap
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/CommandLine
+  ${CMAKE_CURRENT_SOURCE_DIR}/RemoteAccess
+  ${CMAKE_CURRENT_SOURCE_DIR}/Server
+  ${CMAKE_CURRENT_SOURCE_DIR}/Soap
   ${MYSQL_INCLUDE_DIR}
   ${OPENSSL_INCLUDE_DIR}
 )
@@ -94,7 +99,7 @@ if(WIN32)
 
   # Add conf file to dev folder
   add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different \"${CMAKE_CURRENT_SOURCE_DIR}/mangosd.conf.dist.in\" \"$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/mangosd.conf.dist\")
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different \"${CMAKE_CURRENT_SOURCE_DIR}/worldserver.conf.dist.in\" \"$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/worldserver.conf.dist\")
 endif()
 
 if(UNIX)
@@ -119,8 +124,8 @@ if (NOT WIN32)
   install(FILES run-mangosd DESTINATION ${BIN_DIR})
 endif()
 install(TARGETS ${EXECUTABLE_NAME} DESTINATION ${BIN_DIR})
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/mangosd.conf.dist.in ${CMAKE_CURRENT_BINARY_DIR}/mangosd.conf.dist)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mangosd.conf.dist DESTINATION ${CONF_DIR})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/worldserver.conf.dist.in ${CMAKE_CURRENT_BINARY_DIR}/worldserver.conf.dist)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/worldserver.conf.dist DESTINATION ${CONF_DIR})
 
 if(MSVC)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/\${BUILD_TYPE}/${EXECUTABLE_NAME}.pdb DESTINATION ${BIN_DIR} CONFIGURATIONS Debug)

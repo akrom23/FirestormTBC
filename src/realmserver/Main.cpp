@@ -22,8 +22,8 @@
 
 #include "Common.h"
 #include "Database/DatabaseEnv.h"
-#include "RealmList.h"
-
+#include "Realms/RealmList.h"
+                                           
 #include "Config/Config.h"
 #include "Log.h"
 #include "AuthSocket.h"
@@ -47,9 +47,13 @@
 using boost::asio::ip::tcp;
 using namespace boost::program_options;
 
+#ifndef FIRESTORM_REALM_CONFIG
+#define FIRESTORM_REALM_CONFIG "realmserver.conf"
+#endif
+
 #ifdef _WIN32
 #include "ServiceWin32.h"
-char serviceName[] = "realmd";
+char serviceName[] = "realmserver";
 char serviceLongName[] = "Authenication Service";
 char serviceDescription[] = "World of Warcraft Authentication Service";
 /*
@@ -77,7 +81,7 @@ DatabaseType LoginDatabase;                                 ///< Accessor to the
 /// Launch the realm server
 int main(int argc, char *argv[])
 {
-    std::string configFile = _REALMD_CONFIG;
+    std::string configFile = FIRESTORM_REALM_CONFIG;
     if (!sConfig.SetSource(configFile))
     {
         sLog.outError("Could not find configuration file %s.", configFile.c_str());
@@ -87,7 +91,7 @@ int main(int argc, char *argv[])
 
     sLog.Initialize();
 
-    sLog.outString("realm deamon");
+    sLog.outString("realmserver");
     sLog.outString("<Ctrl-C> to stop.\n");
     sLog.outString("Using configuration file %s.", configFile.c_str());
     sLog.outString("Using SSL Version: %s (library: %s", OPENSSL_VERSION_TEXT, SSLeay_version(SSLEAY_VERSION));

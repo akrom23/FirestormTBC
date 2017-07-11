@@ -23,9 +23,9 @@ endif()
 
 if(BUILD_GAME_SERVER)
   add_subdirectory(game)
-  add_subdirectory(mangosd)
+  add_subdirectory(worldserver)
 endif()
 
 if(BUILD_LOGIN_SERVER)
-  add_subdirectory(realmd)
+  add_subdirectory(realmserver)
 endif()
