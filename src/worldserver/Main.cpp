@@ -122,15 +122,15 @@ int main(int argc, char * argv[])
         }
     }
 
-    ///- Set server offline in realmlist
-    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags | %u WHERE id = '%u'", REALM_FLAG_OFFLINE, realmID);
-
     ///- Start the databases
     if (!StartDB())
     {
         Log::WaitBeforeContinueIfNeed();
         return 1;
     }
+
+    ///- Set server offline in realmlist
+    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags | %u WHERE id = '%u'", REALM_FLAG_OFFLINE, realmID);
 
     ///- Initialize the World
     sWorld.SetInitialWorldSettings();
@@ -156,6 +156,13 @@ int main(int argc, char * argv[])
     MaNGOS::Thread world_thread(new WorldRunnable);
     world_thread.setPriority(MaNGOS::Priority_Highest);
 
+    { // ToDo: Fix Me
+        // set realmbuilds depend on mangosd expected builds, and set server online
+        std::string builds = AcceptableClientBuildsListStr();
+        LoginDatabase.escape_string(builds);
+        LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags & ~%u, population = 0, realmbuilds = '%s'  WHERE id = '%u'", REALM_FLAG_OFFLINE, builds.c_str(), realmID);
+    }
+
     //auto const listenIP = sConfig.GetStringDefault("BindIP", "0.0.0.0");
     MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD), 8);
 
@@ -166,11 +173,6 @@ int main(int argc, char * argv[])
     std::unique_ptr<SOAPThread> soapThread;
     if (sConfig.GetBoolDefault("SOAP.Enabled", false))
         soapThread.reset(new SOAPThread("0.0.0.0", sConfig.GetIntDefault("SOAP.Port", 7878)));
-
-    // set realmbuilds depend on mangosd expected builds, and set server online
-    std::string builds = AcceptableClientBuildsListStr();
-    LoginDatabase.escape_string(builds);
-    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags & ~%u, population = 0, realmbuilds = '%s'  WHERE id = '%u'", REALM_FLAG_OFFLINE, builds.c_str(), realmID);
 
     if (int coreStuckTime = sConfig.GetIntDefault("MaxCoreStuckTime", 0))
     {
@@ -224,12 +226,13 @@ int main(int argc, char * argv[])
     }
 #endif
 
-    // wait for shut down and then let things go out of scope to close them down
     while (!World::IsStopped())
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    ///- Set server offline in realmlist
-    LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags | %u WHERE id = '%u'", REALM_FLAG_OFFLINE, realmID);
+    { // ToDo: Fix Me
+        ///- Set server offline in realmlist
+        LoginDatabase.DirectPExecute("UPDATE realmlist SET realmflags = realmflags | %u WHERE id = '%u'", REALM_FLAG_OFFLINE, realmID);
+    }
 
     // when the main thread closes the singletons get unloaded
     // since worldrunnable uses them, it will crash if unloaded after master
@@ -413,3 +416,4 @@ void clearOnlineAccounts()
     // Battleground instance ids reset at server restart
     CharacterDatabase.Execute("UPDATE character_battleground_data SET instance_id = 0");
 }
+
