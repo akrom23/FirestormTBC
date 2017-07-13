@@ -193,12 +193,12 @@ bool ChatHandler::HandleAHBotStatusCommand(char* args)
     if (all)
     {
         PSendSysMessage(fmtId, GetMangosString(LANG_AHBOT_STATUS_ITEM_RATIO),
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_ALLIANCE_ITEM_AMOUNT_RATIO),
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_HORDE_ITEM_AMOUNT_RATIO),
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_NEUTRAL_ITEM_AMOUNT_RATIO),
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_ALLIANCE_ITEM_AMOUNT_RATIO) +
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_HORDE_ITEM_AMOUNT_RATIO) +
-                        sAuctionBotConfig.getConfig(CONFIG_UINT32_AHBOT_NEUTRAL_ITEM_AMOUNT_RATIO));
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_ALLIANCE_ITEM_AMOUNT_RATIO),
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_HORDE_ITEM_AMOUNT_RATIO),
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_NEUTRAL_ITEM_AMOUNT_RATIO),
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_ALLIANCE_ITEM_AMOUNT_RATIO) +
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_HORDE_ITEM_AMOUNT_RATIO) +
+                        sAuctionBotConfig.getConfig(CONFIG_AHBOT_NEUTRAL_ITEM_AMOUNT_RATIO));
 
         if (!m_session)
         {
@@ -4586,7 +4586,7 @@ bool ChatHandler::HandleResetLevelCommand(char* args)
         return false;
 
     // set starting level
-    uint32 start_level = sWorld.getConfig(CONFIG_UINT32_START_PLAYER_LEVEL);
+    uint32 start_level = sWorld.getConfig(CONFIG_START_PLAYER_LEVEL);
 
     target->SetLevel(start_level);
     target->InitStatsForLevel(true);

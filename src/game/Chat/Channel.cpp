@@ -464,7 +464,7 @@ void Channel::List(Player* player)
     size_t pos = data.wpos();
     data << uint32(0);                                      // size of list, placeholder
 
-    AccountTypes gmLevelInWhoList = (AccountTypes)sWorld.getConfig(CONFIG_UINT32_GM_LEVEL_IN_WHO_LIST);
+    AccountTypes gmLevelInWhoList = (AccountTypes)sWorld.getConfig(CONFIG_GM_LEVEL_IN_WHO_LIST);
 
     uint32 count  = 0;
     for (PlayerList::const_iterator i = m_players.begin(); i != m_players.end(); ++i)

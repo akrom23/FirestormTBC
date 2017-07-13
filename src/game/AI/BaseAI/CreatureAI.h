@@ -282,7 +282,7 @@ class CreatureAI
 
         /**
          * Called at World update tick, by default every 100ms
-         * This setting is dependend on CONFIG_UINT32_INTERVAL_MAPUPDATE
+         * This setting is dependend on CONFIG_INTERVAL_MAPUPDATE
          * Note: Use this function to handle Timers, Threat-Management and MeleeAttacking
          * @param uiDiff Passed time since last call
          */

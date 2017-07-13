@@ -177,6 +177,10 @@ SD2ErrorLogFile = "SD2Errors.log"
 #        More distance let have better performence, less distance let have more sensitive reaction at target move.
 #        Default: 1.5
 #
+#    MapUpdateThreads
+#        Number of map update threads to run
+#        Default: 5
+#
 #    mmap.enabled
 #        Enable/Disable pathfinding using mmaps
 #        Default: 1 (enable)
@@ -243,6 +247,7 @@ vmap.ignoreSpellIds = "7720"
 vmap.enableIndoorCheck = 1
 DetectPosCollision = 1
 TargetPosRecalculateRange = 1.5
+MapUpdateThreads = 5
 mmap.enabled = 1
 mmap.ignoreMapIds = ""
 PathFinder.OptimizePath = 1

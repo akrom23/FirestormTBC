@@ -1059,7 +1059,7 @@ void Pet::GivePetXP(uint32 xp)
         return;
 
     uint32 level = getLevel();
-    uint32 maxlevel = std::min(sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL), GetOwner()->getLevel());
+    uint32 maxlevel = std::min(sWorld.getConfig(CONFIG_MAX_PLAYER_LEVEL), GetOwner()->getLevel());
 
     // pet not receive xp for level equal to owner level
     if (level >= maxlevel)
@@ -1219,7 +1219,7 @@ void Pet::InitStatsForLevel(uint32 petlevel)
             }
 
             // Max level
-            if (petlevel < sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL))
+            if (petlevel < sWorld.getConfig(CONFIG_MAX_PLAYER_LEVEL))
                 SetUInt32Value(UNIT_FIELD_PETNEXTLEVELEXP, sObjectMgr.GetXPForPetLevel(petlevel));
             else
             {

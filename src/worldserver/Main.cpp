@@ -164,7 +164,7 @@ int main(int argc, char * argv[])
     }
 
     //auto const listenIP = sConfig.GetStringDefault("BindIP", "0.0.0.0");
-    MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_UINT32_PORT_WORLD), 8);
+    MaNGOS::Listener<WorldSocket> listener(sWorld.getConfig(CONFIG_PORT_WORLD), 8);
 
     std::unique_ptr<MaNGOS::Listener<RASocket>> raListener;
     if (sConfig.GetBoolDefault("Ra.Enable", false))

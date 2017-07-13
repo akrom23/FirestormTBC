@@ -32,9 +32,9 @@ INSTANTIATE_SINGLETON_2(MapManager, CLASS_LOCK);
 INSTANTIATE_CLASS_MUTEX(MapManager, std::recursive_mutex);
 
 MapManager::MapManager()
-    : i_GridStateErrorCount(0), i_gridCleanUpDelay(sWorld.getConfig(CONFIG_UINT32_INTERVAL_GRIDCLEAN))
+    : i_GridStateErrorCount(0), i_gridCleanUpDelay(sWorld.getConfig(CONFIG_INTERVAL_GRIDCLEAN))
 {
-    i_timer.SetInterval(sWorld.getConfig(CONFIG_UINT32_INTERVAL_MAPUPDATE));
+    i_timer.SetInterval(sWorld.getConfig(CONFIG_INTERVAL_MAPUPDATE));
 }
 
 MapManager::~MapManager()
@@ -52,6 +52,10 @@ void
 MapManager::Initialize()
 {
     InitStateMachine();
+    int num_threads(sWorld.getConfig(CONFIG_MAPUPDATE_NUMTHREADS));
+    if (num_threads > 0)
+        m_updater.activate(num_threads);
+
     InitMaxInstanceId();
 }
 
@@ -173,7 +177,14 @@ void MapManager::Update(uint32 diff)
         return;
 
     for (MapMapType::iterator iter = i_maps.begin(); iter != i_maps.end(); ++iter)
-        iter->second->Update((uint32)i_timer.GetCurrent());
+    {
+        if (m_updater.activated())
+            m_updater.schedule_update(*iter->second, uint32(i_timer.GetCurrent()));
+        else
+            iter->second->Update((uint32) i_timer.GetCurrent());
+    }
+    if (m_updater.activated())
+        m_updater.wait();
 
     for (TransportSet::iterator iter = m_Transports.begin(); iter != m_Transports.end(); ++iter)
     {
@@ -234,6 +245,9 @@ void MapManager::UnloadAll()
         delete i_maps.begin()->second;
         i_maps.erase(i_maps.begin());
     }
+
+    if (m_updater.activated())
+        m_updater.deactivate();
 
     TerrainManager::Instance().UnloadAll();
 }

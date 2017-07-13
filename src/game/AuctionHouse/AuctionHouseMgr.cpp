@@ -68,7 +68,7 @@ uint32 AuctionHouseMgr::GetAuctionDeposit(AuctionHouseEntry const* entry, uint32
 
     deposit = deposit * entry->depositPercent * 3.0f / 100.0f;
 
-    float min_deposit = float(sWorld.getConfig(CONFIG_UINT32_AUCTION_DEPOSIT_MIN));
+    float min_deposit = float(sWorld.getConfig(CONFIG_AUCTION_DEPOSIT_MIN));
 
     if (deposit < min_deposit)
         deposit = min_deposit;

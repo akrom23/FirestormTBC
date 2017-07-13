@@ -395,9 +395,9 @@ bool ChatHandler::HandleCharacterDeletedDeleteCommand(char* args)
  */
 bool ChatHandler::HandleCharacterDeletedOldCommand(char* args)
 {
-    int32 keepDays = sWorld.getConfig(CONFIG_UINT32_CHARDELETE_KEEP_DAYS);
+    int32 keepDays = sWorld.getConfig(CONFIG_CHARDELETE_KEEP_DAYS);
 
-    if (!ExtractOptInt32(&args, keepDays, sWorld.getConfig(CONFIG_UINT32_CHARDELETE_KEEP_DAYS)))
+    if (!ExtractOptInt32(&args, keepDays, sWorld.getConfig(CONFIG_CHARDELETE_KEEP_DAYS)))
         return false;
 
     if (keepDays < 0)
